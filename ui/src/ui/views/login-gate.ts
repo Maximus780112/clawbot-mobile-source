@@ -45,7 +45,7 @@ export function renderLoginGate(state: AppViewState) {
       w.__clawbotAutoConnectStarted = true;
       window.localStorage.setItem("clawbot.gatewayUrl", forcedUrl);
       window.localStorage.setItem("clawbot.gatewayToken", bootToken);
-      window.setTimeout(() => state.connect(), 0);
+      window.setTimeout(() => state.connect(), 150);
     }
   }
 
