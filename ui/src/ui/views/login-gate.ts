@@ -10,6 +10,45 @@ export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
   const faviconSrc = agentLogoUrl(basePath);
 
+  if (typeof window !== "undefined") {
+    const w = window as typeof window & {
+      __clawbotAutoConnectStarted?: boolean;
+      __clawbotBootstrapped?: boolean;
+    };
+
+    const hash = window.location.hash.startsWith("#")
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const hashParams = new URLSearchParams(hash);
+    const hashToken = hashParams.get("token") ?? "";
+    const savedToken = window.localStorage.getItem("clawbot.gatewayToken") ?? "";
+    const forcedUrl = "wss://clawbot.ch";
+    const bootToken = hashToken || state.settings.token || savedToken;
+    const nextSettings =
+      state.settings.gatewayUrl !== forcedUrl || (bootToken && state.settings.token !== bootToken)
+        ? { ...state.settings, gatewayUrl: forcedUrl, token: bootToken }
+        : state.settings;
+
+    if (!w.__clawbotBootstrapped) {
+      w.__clawbotBootstrapped = true;
+      if (nextSettings !== state.settings) {
+        state.applySettings(nextSettings);
+      }
+    }
+
+    if (
+      !state.connected &&
+      !state.lastError &&
+      !w.__clawbotAutoConnectStarted &&
+      Boolean(bootToken)
+    ) {
+      w.__clawbotAutoConnectStarted = true;
+      window.localStorage.setItem("clawbot.gatewayUrl", forcedUrl);
+      window.localStorage.setItem("clawbot.gatewayToken", bootToken);
+      window.setTimeout(() => state.connect(), 0);
+    }
+  }
+
   return html`
     <div class="login-gate">
       <div class="login-gate__card">
@@ -22,12 +61,13 @@ export function renderLoginGate(state: AppViewState) {
           <label class="field">
             <span>${t("overview.access.wsUrl")}</span>
             <input
-              .value=${state.settings.gatewayUrl}
+              .value=${"wss://clawbot.ch"}
               @input=${(e: Event) => {
                 const v = (e.target as HTMLInputElement).value;
                 state.applySettings({ ...state.settings, gatewayUrl: v });
               }}
-              placeholder="ws://127.0.0.1:18789"
+              placeholder="wss://clawbot.ch"
+              readonly
             />
           </label>
           <label class="field">
@@ -45,6 +85,11 @@ export function renderLoginGate(state: AppViewState) {
                 placeholder="OPENCLAW_GATEWAY_TOKEN (${t("login.passwordPlaceholder")})"
                 @keydown=${(e: KeyboardEvent) => {
                   if (e.key === "Enter") {
+                    localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
+                    localStorage.setItem(
+                      "clawbot.gatewayToken",
+                      (e.target as HTMLInputElement).value,
+                    );
                     state.connect();
                   }
                 }}
@@ -78,6 +123,8 @@ export function renderLoginGate(state: AppViewState) {
                 placeholder="${t("login.passwordPlaceholder")}"
                 @keydown=${(e: KeyboardEvent) => {
                   if (e.key === "Enter") {
+                    localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
+                    localStorage.setItem("clawbot.gatewayToken", state.settings.token);
                     state.connect();
                   }
                 }}
@@ -96,7 +143,14 @@ export function renderLoginGate(state: AppViewState) {
               </button>
             </div>
           </label>
-          <button class="btn primary login-gate__connect" @click=${() => state.connect()}>
+          <button
+            class="btn primary login-gate__connect"
+            @click=${() => {
+              localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
+              localStorage.setItem("clawbot.gatewayToken", state.settings.token);
+              state.connect();
+            }}
+          >
             ${t("common.connect")}
           </button>
         </div>
