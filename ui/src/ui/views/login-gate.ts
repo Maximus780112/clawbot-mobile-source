@@ -4,71 +4,27 @@ import type { AppViewState } from "../app-view-state.ts";
 import { icons } from "../icons.ts";
 import { normalizeBasePath } from "../navigation.ts";
 import { agentLogoUrl } from "./agents-utils.ts";
-import { renderConnectCommand } from "./connect-command.ts";
 
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
   const faviconSrc = agentLogoUrl(basePath);
+  const forcedUrl = "wss://clawbot.ch";
 
   if (typeof window !== "undefined") {
-    const w = window as typeof window & {
-      __clawbotAutoConnectStarted?: boolean;
-      __clawbotBootstrapped?: boolean;
-      __clawbotBootAt?: number;
-    };
-
     const hash = window.location.hash.startsWith("#")
       ? window.location.hash.slice(1)
       : window.location.hash;
     const hashParams = new URLSearchParams(hash);
     const hashToken = hashParams.get("token") ?? "";
     const savedToken = window.localStorage.getItem("clawbot.gatewayToken") ?? "";
-    const forcedUrl = "wss://clawbot.ch";
-    const bootToken = hashToken || state.settings.token || savedToken;
+    const bootToken = hashToken || savedToken || state.settings.token || "";
 
-    const nextSettings =
-      state.settings.gatewayUrl !== forcedUrl || (bootToken && state.settings.token !== bootToken)
-        ? { ...state.settings, gatewayUrl: forcedUrl, token: bootToken }
-        : state.settings;
-
-    if (!w.__clawbotBootstrapped) {
-      w.__clawbotBootstrapped = true;
-      w.__clawbotBootAt = Date.now();
-      if (nextSettings !== state.settings) {
-        state.applySettings(nextSettings);
-      }
-      if (bootToken) {
-        window.localStorage.setItem("clawbot.gatewayUrl", forcedUrl);
-        window.localStorage.setItem("clawbot.gatewayToken", bootToken);
-      }
-    }
-
-    if (
-      !state.connected &&
-      !state.lastError &&
-      !w.__clawbotAutoConnectStarted &&
-      Boolean(bootToken)
-    ) {
-      w.__clawbotAutoConnectStarted = true;
-      window.setTimeout(() => state.connect(), 250);
-    }
-
-    const bootAgeMs = Date.now() - (w.__clawbotBootAt ?? Date.now());
-    const shouldShowConnectingSplash =
-      Boolean(bootToken) && !state.connected && !state.lastError && bootAgeMs < 4000;
-
-    if (shouldShowConnectingSplash) {
-      return html`
-        <div class="login-gate">
-          <div class="login-gate__card">
-            <div class="login-gate__header">
-              <img class="login-gate__logo" src=${faviconSrc} alt="Clawbot" />
-              <div class="login-gate__title">Clawbot</div>
-              <div class="login-gate__sub">Connecting…</div>
-            </div>
-          </div>
-        </div>
-      `;
+    if (state.settings.gatewayUrl !== forcedUrl || state.settings.token !== bootToken) {
+      state.applySettings({
+        ...state.settings,
+        gatewayUrl: forcedUrl,
+        token: bootToken,
+      });
     }
   }
 
@@ -80,19 +36,13 @@ export function renderLoginGate(state: AppViewState) {
           <div class="login-gate__title">Clawbot</div>
           <div class="login-gate__sub">${t("login.subtitle")}</div>
         </div>
+
         <div class="login-gate__form">
           <label class="field">
             <span>${t("overview.access.wsUrl")}</span>
-            <input
-              .value=${"wss://clawbot.ch"}
-              @input=${(e: Event) => {
-                const v = (e.target as HTMLInputElement).value;
-                state.applySettings({ ...state.settings, gatewayUrl: v });
-              }}
-              placeholder="wss://clawbot.ch"
-              readonly
-            />
+            <input .value=${forcedUrl} placeholder="wss://clawbot.ch" readonly />
           </label>
+
           <label class="field">
             <span>${t("overview.access.token")}</span>
             <div class="login-gate__secret-row">
@@ -103,18 +53,15 @@ export function renderLoginGate(state: AppViewState) {
                 .value=${state.settings.token}
                 @input=${(e: Event) => {
                   const v = (e.target as HTMLInputElement).value;
-                  state.applySettings({ ...state.settings, token: v });
-                  localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
-                  localStorage.setItem("clawbot.gatewayToken", v);
+                  window.localStorage.setItem("clawbot.gatewayToken", v);
+                  state.applySettings({ ...state.settings, gatewayUrl: forcedUrl, token: v });
                 }}
-                placeholder="OPENCLAW_GATEWAY_TOKEN (${t("login.passwordPlaceholder")})"
+                placeholder="Enter token once"
                 @keydown=${(e: KeyboardEvent) => {
                   if (e.key === "Enter") {
-                    localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
-                    localStorage.setItem(
-                      "clawbot.gatewayToken",
-                      (e.target as HTMLInputElement).value,
-                    );
+                    const v = (e.target as HTMLInputElement).value;
+                    window.localStorage.setItem("clawbot.gatewayToken", v);
+                    state.applySettings({ ...state.settings, gatewayUrl: forcedUrl, token: v });
                     state.connect();
                   }
                 }}
@@ -133,76 +80,28 @@ export function renderLoginGate(state: AppViewState) {
               </button>
             </div>
           </label>
-          <label class="field">
-            <span>${t("overview.access.password")}</span>
-            <div class="login-gate__secret-row">
-              <input
-                type=${state.loginShowGatewayPassword ? "text" : "password"}
-                autocomplete="off"
-                spellcheck="false"
-                .value=${state.password}
-                @input=${(e: Event) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  state.password = v;
-                }}
-                placeholder="${t("login.passwordPlaceholder")}"
-                @keydown=${(e: KeyboardEvent) => {
-                  if (e.key === "Enter") {
-                    localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
-                    localStorage.setItem("clawbot.gatewayToken", state.settings.token);
-                    state.connect();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                class="btn btn--icon ${state.loginShowGatewayPassword ? "active" : ""}"
-                title=${state.loginShowGatewayPassword ? "Hide password" : "Show password"}
-                aria-label="Toggle password visibility"
-                aria-pressed=${state.loginShowGatewayPassword}
-                @click=${() => {
-                  state.loginShowGatewayPassword = !state.loginShowGatewayPassword;
-                }}
-              >
-                ${state.loginShowGatewayPassword ? icons.eye : icons.eyeOff}
-              </button>
-            </div>
-          </label>
+
           <button
             class="btn primary login-gate__connect"
             @click=${() => {
-              localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
-              localStorage.setItem("clawbot.gatewayToken", state.settings.token);
+              window.localStorage.setItem("clawbot.gatewayToken", state.settings.token);
+              state.applySettings({
+                ...state.settings,
+                gatewayUrl: forcedUrl,
+                token: state.settings.token,
+              });
               state.connect();
             }}
           >
             ${t("common.connect")}
           </button>
         </div>
+
         ${state.lastError
           ? html`<div class="callout danger" style="margin-top: 14px;">
               <div>${state.lastError}</div>
             </div>`
           : ""}
-        <div class="login-gate__help">
-          <div class="login-gate__help-title">${t("overview.connection.title")}</div>
-          <ol class="login-gate__steps">
-            <li>
-              ${t("overview.connection.step1")}${renderConnectCommand("openclaw gateway run")}
-            </li>
-            <li>${t("overview.connection.step2")} ${renderConnectCommand("openclaw dashboard")}</li>
-            <li>${t("overview.connection.step3")}</li>
-          </ol>
-          <div class="login-gate__docs">
-            <a
-              class="session-link"
-              href="https://docs.openclaw.ai/web/dashboard"
-              target="_blank"
-              rel="noreferrer"
-              >${t("overview.connection.docsLink")}</a
-            >
-          </div>
-        </div>
       </div>
     </div>
   `;
