@@ -14,6 +14,7 @@ export function renderLoginGate(state: AppViewState) {
     const w = window as typeof window & {
       __clawbotAutoConnectStarted?: boolean;
       __clawbotBootstrapped?: boolean;
+      __clawbotBootAt?: number;
     };
 
     const hash = window.location.hash.startsWith("#")
@@ -24,6 +25,7 @@ export function renderLoginGate(state: AppViewState) {
     const savedToken = window.localStorage.getItem("clawbot.gatewayToken") ?? "";
     const forcedUrl = "wss://clawbot.ch";
     const bootToken = hashToken || state.settings.token || savedToken;
+
     const nextSettings =
       state.settings.gatewayUrl !== forcedUrl || (bootToken && state.settings.token !== bootToken)
         ? { ...state.settings, gatewayUrl: forcedUrl, token: bootToken }
@@ -31,8 +33,13 @@ export function renderLoginGate(state: AppViewState) {
 
     if (!w.__clawbotBootstrapped) {
       w.__clawbotBootstrapped = true;
+      w.__clawbotBootAt = Date.now();
       if (nextSettings !== state.settings) {
         state.applySettings(nextSettings);
+      }
+      if (bootToken) {
+        window.localStorage.setItem("clawbot.gatewayUrl", forcedUrl);
+        window.localStorage.setItem("clawbot.gatewayToken", bootToken);
       }
     }
 
@@ -43,9 +50,25 @@ export function renderLoginGate(state: AppViewState) {
       Boolean(bootToken)
     ) {
       w.__clawbotAutoConnectStarted = true;
-      window.localStorage.setItem("clawbot.gatewayUrl", forcedUrl);
-      window.localStorage.setItem("clawbot.gatewayToken", bootToken);
-      window.setTimeout(() => state.connect(), 150);
+      window.setTimeout(() => state.connect(), 250);
+    }
+
+    const bootAgeMs = Date.now() - (w.__clawbotBootAt ?? Date.now());
+    const shouldShowConnectingSplash =
+      Boolean(bootToken) && !state.connected && !state.lastError && bootAgeMs < 4000;
+
+    if (shouldShowConnectingSplash) {
+      return html`
+        <div class="login-gate">
+          <div class="login-gate__card">
+            <div class="login-gate__header">
+              <img class="login-gate__logo" src=${faviconSrc} alt="Clawbot" />
+              <div class="login-gate__title">Clawbot</div>
+              <div class="login-gate__sub">Connecting…</div>
+            </div>
+          </div>
+        </div>
+      `;
     }
   }
 
@@ -53,8 +76,8 @@ export function renderLoginGate(state: AppViewState) {
     <div class="login-gate">
       <div class="login-gate__card">
         <div class="login-gate__header">
-          <img class="login-gate__logo" src=${faviconSrc} alt="OpenClaw" />
-          <div class="login-gate__title">OpenClaw</div>
+          <img class="login-gate__logo" src=${faviconSrc} alt="Clawbot" />
+          <div class="login-gate__title">Clawbot</div>
           <div class="login-gate__sub">${t("login.subtitle")}</div>
         </div>
         <div class="login-gate__form">
@@ -81,6 +104,8 @@ export function renderLoginGate(state: AppViewState) {
                 @input=${(e: Event) => {
                   const v = (e.target as HTMLInputElement).value;
                   state.applySettings({ ...state.settings, token: v });
+                  localStorage.setItem("clawbot.gatewayUrl", "wss://clawbot.ch");
+                  localStorage.setItem("clawbot.gatewayToken", v);
                 }}
                 placeholder="OPENCLAW_GATEWAY_TOKEN (${t("login.passwordPlaceholder")})"
                 @keydown=${(e: KeyboardEvent) => {
